@@ -73,8 +73,8 @@ def train_model(hotel_df, output_dir):
     joblib.dump(knn, os.path.join(output_dir, 'knn_model.pkl'))
     joblib.dump(preprocessor, os.path.join(output_dir, 'preprocessor.pkl'))
     
-    # Save the processed catalog for lookup
-    hotel_df.to_pickle(os.path.join(output_dir, 'hotel_catalog.pkl'))
+    # Save the processed catalog for lookup (joblib avoids pyarrow dependency)
+    joblib.dump(hotel_df, os.path.join(output_dir, 'hotel_catalog.pkl'))
     
     print("Model training pipeline completed successfully!")
 

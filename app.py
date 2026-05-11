@@ -2,87 +2,93 @@ import subprocess
 import sys
 import os
 
-# Auto-install all dependencies before anything else loads
-_req_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
-if os.path.exists(_req_file):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", _req_file, "--quiet"])
+# ── Step 1: Install all dependencies ──────────────────────────────────────────
+print("[STARTUP] Installing dependencies...")
+_base = os.path.dirname(os.path.abspath(__file__))
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "-r",
+     os.path.join(_base, "requirements.txt"), "--quiet",
+     "--break-system-packages"]
+)
+print("[STARTUP] Dependencies installed.")
 
+# ── Step 2: Train models (runs train.py fresh — avoids pickle version issues) ─
+print("[STARTUP] Training model from CSV data...")
+subprocess.check_call([sys.executable, os.path.join(_base, "train.py")],
+                      cwd=_base)
+print("[STARTUP] Training complete.")
+
+# ── Step 3: Load trained models ───────────────────────────────────────────────
 from flask import Flask, render_template, request
 import pandas as pd
 import joblib
 
 app = Flask(__name__)
 
-# Load models and data at startup
-MODEL_DIR = "models"
+MODEL_DIR = os.path.join(_base, "models")
+
 try:
-    knn_model = joblib.load(os.path.join(MODEL_DIR, "knn_model.pkl"))
-    preprocessor = joblib.load(os.path.join(MODEL_DIR, "preprocessor.pkl"))
-    hotel_catalog = pd.read_pickle(os.path.join(MODEL_DIR, "hotel_catalog.pkl"))
-    
-    # Extract unique values for the frontend dropdowns
+    knn_model     = joblib.load(os.path.join(MODEL_DIR, "knn_model.pkl"))
+    preprocessor  = joblib.load(os.path.join(MODEL_DIR, "preprocessor.pkl"))
+    hotel_catalog = joblib.load(os.path.join(MODEL_DIR, "hotel_catalog.pkl"))
+
     unique_countries = sorted(hotel_catalog['country'].unique().tolist())
-    unique_hotels = sorted(hotel_catalog['hotel'].unique().tolist())
+    unique_hotels    = sorted(hotel_catalog['hotel'].unique().tolist())
+    print(f"[STARTUP] Models loaded. {len(unique_countries)} countries, {len(unique_hotels)} hotel types.")
 except Exception as e:
-    print(f"Error loading models. Please ensure train.py was run successfully. Error: {e}")
-    knn_model, preprocessor, hotel_catalog = None, None, None
-    unique_countries, unique_hotels = [], []
+    print(f"[STARTUP ERROR] Failed to load models: {e}")
+    knn_model = preprocessor = hotel_catalog = None
+    unique_countries = unique_hotels = []
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", 
-                           countries=unique_countries, 
-                           hotels=unique_hotels, 
+    return render_template("index.html",
+                           countries=unique_countries,
+                           hotels=unique_hotels,
                            recommendations=None)
 
 @app.route("/recommend", methods=["POST"])
 def recommend():
-    if not knn_model or not preprocessor or hotel_catalog is None:
-        return render_template("index.html", error="Model not loaded. Please train the model first.", countries=unique_countries, hotels=unique_hotels)
-
+    if knn_model is None or preprocessor is None or hotel_catalog is None:
+        return render_template("index.html",
+                               error="Models not loaded. Please check server logs.",
+                               countries=unique_countries,
+                               hotels=unique_hotels)
     try:
-        # Extract user preferences
         selected_country = request.form.get("country")
-        selected_hotel = request.form.get("hotel_type")
-        target_adr = float(request.form.get("price", 100))
-        target_rating = float(request.form.get("rating", 4.0))
+        selected_hotel   = request.form.get("hotel_type")
+        target_adr       = float(request.form.get("price", 100))
+        target_rating    = float(request.form.get("rating", 4.0))
 
-        # Create a dataframe for the user's input
         input_data = pd.DataFrame([{
-            'hotel': selected_hotel,
+            'hotel':   selected_hotel,
             'country': selected_country,
-            'adr': target_adr,
-            'rating': target_rating
+            'adr':     target_adr,
+            'rating':  target_rating
         }])
 
-        # Preprocess input data
-        processed_input = preprocessor.transform(input_data)
-
-        # Get top 5 recommendations
+        processed_input    = preprocessor.transform(input_data)
         distances, indices = knn_model.kneighbors(processed_input, n_neighbors=5)
-        
-        # Extract the recommended hotels from the catalog
-        recommended_indices = indices[0]
-        recommendations_df = hotel_catalog.iloc[recommended_indices]
-        
-        # Add distance as a score (optional, lower is better)
-        recommendations_df = recommendations_df.copy()
+
+        recommendations_df = hotel_catalog.iloc[indices[0]].copy()
         recommendations_df['match_score'] = distances[0]
-        
-        # Convert to a list of dicts for rendering
         recs = recommendations_df.to_dict(orient='records')
-        
-        return render_template("index.html", 
-                               countries=unique_countries, 
-                               hotels=unique_hotels, 
+
+        return render_template("index.html",
+                               countries=unique_countries,
+                               hotels=unique_hotels,
                                recommendations=recs,
                                selected_country=selected_country,
                                selected_hotel=selected_hotel,
                                target_adr=target_adr,
                                target_rating=target_rating)
-                               
     except Exception as e:
-        return render_template("index.html", error=str(e), countries=unique_countries, hotels=unique_hotels)
+        return render_template("index.html",
+                               error=str(e),
+                               countries=unique_countries,
+                               hotels=unique_hotels)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
