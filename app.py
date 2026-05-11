@@ -1,7 +1,15 @@
+import subprocess
+import sys
+import os
+
+# Auto-install all dependencies before anything else loads
+_req_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
+if os.path.exists(_req_file):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", _req_file, "--quiet"])
+
 from flask import Flask, render_template, request
 import pandas as pd
 import joblib
-import os
 
 app = Flask(__name__)
 
