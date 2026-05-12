@@ -12,10 +12,9 @@ subprocess.check_call(
 )
 print("[STARTUP] Dependencies installed.")
 
-# ── Step 2: Train models (runs train.py fresh — avoids pickle version issues) ─
+# ── Step 2: Train models fresh (avoids pickle version mismatch on Render) ─────
 print("[STARTUP] Training model from CSV data...")
-subprocess.check_call([sys.executable, os.path.join(_base, "train.py")],
-                      cwd=_base)
+subprocess.check_call([sys.executable, os.path.join(_base, "train.py")], cwd=_base)
 print("[STARTUP] Training complete.")
 
 # ── Step 3: Load trained models ───────────────────────────────────────────────
@@ -24,7 +23,6 @@ import pandas as pd
 import joblib
 
 app = Flask(__name__)
-
 MODEL_DIR = os.path.join(_base, "models")
 
 try:
@@ -59,8 +57,10 @@ def recommend():
     try:
         selected_country = request.form.get("country")
         selected_hotel   = request.form.get("hotel_type")
-        target_adr       = float(request.form.get("price", 100))
+        target_adr       = float(request.form.get("price", 12500))
         target_rating    = float(request.form.get("rating", 4.0))
+        booking_date     = request.form.get("booking_date", "")
+        num_persons      = request.form.get("num_persons", "2")
 
         input_data = pd.DataFrame([{
             'hotel':   selected_hotel,
@@ -83,7 +83,9 @@ def recommend():
                                selected_country=selected_country,
                                selected_hotel=selected_hotel,
                                target_adr=target_adr,
-                               target_rating=target_rating)
+                               target_rating=target_rating,
+                               booking_date=booking_date,
+                               num_persons=num_persons)
     except Exception as e:
         return render_template("index.html",
                                error=str(e),
