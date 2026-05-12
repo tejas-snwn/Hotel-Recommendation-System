@@ -19,6 +19,7 @@ print("[STARTUP] Training complete.")
 
 # ── Step 3: Load trained models ───────────────────────────────────────────────
 from flask import Flask, render_template, request
+from sklearn.neighbors import NearestNeighbors
 import pandas as pd
 import joblib
 
@@ -32,7 +33,7 @@ try:
 
     unique_countries = sorted(hotel_catalog['country'].unique().tolist())
     unique_hotels    = sorted(hotel_catalog['hotel'].unique().tolist())
-    print(f"[STARTUP] Models loaded. {len(unique_countries)} countries, {len(unique_hotels)} hotel types.")
+    print(f"[STARTUP] Models loaded. {len(unique_countries)} countries, {len(unique_hotels)} hotel types, {len(hotel_catalog)} total hotels.")
 except Exception as e:
     print(f"[STARTUP ERROR] Failed to load models: {e}")
     knn_model = preprocessor = hotel_catalog = None
@@ -69,12 +70,25 @@ def recommend():
             'rating':  target_rating
         }])
 
-        processed_input    = preprocessor.transform(input_data)
-        distances, indices = knn_model.kneighbors(processed_input, n_neighbors=5)
+        # Filter catalog by selected country for more relevant results
+        filtered_catalog = hotel_catalog[hotel_catalog['country'] == selected_country].copy()
 
-        recommendations_df = hotel_catalog.iloc[indices[0]].copy()
-        recommendations_df['match_score'] = distances[0]
-        recs = recommendations_df.to_dict(orient='records')
+        if filtered_catalog.empty:
+            recs = []
+        else:
+            processed_input   = preprocessor.transform(input_data)
+            processed_catalog = preprocessor.transform(filtered_catalog)
+
+            # Build a temp KNN on just the filtered country's hotels
+            n_neighbors = min(5, len(filtered_catalog))
+            temp_knn = NearestNeighbors(n_neighbors=n_neighbors, metric='cosine', algorithm='brute')
+            temp_knn.fit(processed_catalog)
+
+            distances, indices = temp_knn.kneighbors(processed_input)
+
+            recommendations_df = filtered_catalog.iloc[indices[0]].copy()
+            recommendations_df['match_score'] = distances[0]
+            recs = recommendations_df.to_dict(orient='records')
 
         return render_template("index.html",
                                countries=unique_countries,

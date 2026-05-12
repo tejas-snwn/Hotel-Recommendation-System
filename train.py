@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+import random
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
@@ -38,12 +39,31 @@ def generate_hotel_dataset(input_csv):
 
     grouped = grouped[grouped['total_bookings'] > 5].copy()
 
-    np.random.seed(42)
-    grouped['rating'] = np.round(np.random.uniform(3.0, 5.0, size=len(grouped)), 1)
-    grouped['hotel_name'] = grouped['hotel'] + " in " + grouped['country']
+    print("Generating random hotel names and expanding dataset...")
+    prefixes = ["The Grand", "Royal", "Sunset", "Ocean", "Majestic", "Crystal",
+                "Emerald", "Golden", "Luxury", "Elite", "Classic", "Urban",
+                "Imperial", "Sapphire", "Pearl", "Tranquil", "Harmony", "Serene", "Opal"]
+    suffixes = ["Palace", "Resort & Spa", "Suites", "Inn", "Boutique Hotel",
+                "Retreat", "Oasis", "Plaza", "Residency", "Grand", "Towers",
+                "View", "Heights", "Manor", "Villa", "Lodge", "Residences"]
 
-    print(f"Generated {len(grouped)} unique hotels.")
-    return grouped
+    expanded_rows = []
+    random.seed(42)
+    np.random.seed(42)
+
+    for _, row in grouped.iterrows():
+        for _ in range(5):
+            new_row = row.copy()
+            new_row['hotel_name'] = f"{random.choice(prefixes)} {random.choice(suffixes)}"
+            noise_factor = random.uniform(0.8, 1.2)
+            new_row['adr'] = round(row['adr'] * noise_factor, 2)
+            new_row['rating'] = round(random.uniform(3.0, 5.0), 1)
+            expanded_rows.append(new_row)
+
+    expanded_df = pd.DataFrame(expanded_rows)
+
+    print(f"Generated {len(expanded_df)} unique hotels.")
+    return expanded_df
 
 def train_model(hotel_df, output_dir):
     print("Preprocessing data and encoding features...")
@@ -52,7 +72,7 @@ def train_model(hotel_df, output_dir):
     numerical_features   = ['adr', 'rating']
 
     preprocessor = ColumnTransformer(transformers=[
-        ('num', StandardScaler(),              numerical_features),
+        ('num', StandardScaler(),                       numerical_features),
         ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
     ])
 
@@ -66,7 +86,7 @@ def train_model(hotel_df, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     joblib.dump(knn,          os.path.join(output_dir, 'knn_model.pkl'))
     joblib.dump(preprocessor, os.path.join(output_dir, 'preprocessor.pkl'))
-    joblib.dump(hotel_df,     os.path.join(output_dir, 'hotel_catalog.pkl'))  # joblib, NOT pd.to_pickle
+    joblib.dump(hotel_df,     os.path.join(output_dir, 'hotel_catalog.pkl'))
 
     print("Model training pipeline completed successfully!")
 
